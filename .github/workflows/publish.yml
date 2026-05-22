@@ -1,0 +1,55 @@
+name: Publish to WordPress
+
+on:
+  push:
+    paths:
+      - 'queue/*.json'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish to WordPress
+        env:
+          WP_AUTH: YWRtaW46YmtDaiBvWndRIGpnbXggRnhxMCBXZWFiIFg4VWk=
+        run: |
+          python3 << 'PYED'
+          import json, os, urllib.request, urllib.error, glob
+
+          files = sorted(glob.glob('queue/*.json'))
+          if not files:
+              print('No files in queue/')
+              exit(0)
+
+          for filepath in files:
+              with open(filepath, 'r', encoding='utf-8') as f:
+                  meta = json.load(f)
+              if meta.get('published'):
+                  print(f'Skipping {filepath} (already published)')
+                  continue
+              print(f'Publishing: {meta["title"]}')
+              data = {
+                  'title': meta['title'],
+                  'content': meta['content'],
+                  'slug': meta['slug'],
+                  'status': 'publish',
+                  'excerpt': meta.get('meta_desc', '')
+              }
+              payload = json.dumps(data, ensure_ascii=False).encode('utf-8')
+              print(f'Payload: {len(payload)//1024}KB')
+              req = urllib.request.Request(
+                  'https://tilaaiptv.com/wp-json/wp/v2/posts',
+                  data=payload, method='POST'
+              )
+              req.add_header('Authorization', f'Basic {os.environ["WP_AUTH"]}')
+              req.add_header('Content-Type', 'application/json; charset=utf-8')
+              try:
+                  with urllib.request.urlopen(req, timeout=60) as r:
+                      d = json.loads(r.read())
+                  print(f'SUCCESS: id={d["id"]} url={d["link"]}')
+              except urllib.error.HTTPError as e:
+                  print(f'HTTP ERROR {e.code}: {e.read().decode("utf-8","lossy")[:400]}')
+                  exit(1)
+          PYED
